@@ -9,6 +9,64 @@ import sys
 import curses
 import keyboard
 
+################################################################################
+################################TRAINING########################################
+print("Loading Dataset")
+
+data = pd.read_csv("Default.csv",header=None)
+acc_data = data.iloc[:,:3]
+labels_def = np.zeros(len(acc_data))
+
+mov_data = pd.read_csv("1D.csv",header=None).iloc[:,:3]
+labels_mov=np.ones(len(mov_data))
+mov_data2 = pd.read_csv("1D_bis.csv",header=None).iloc[:,:3]
+labels_mov2=np.ones(len(mov_data2))
+mov_data3 = pd.read_csv("vertical.csv",header=None).iloc[:,:3]
+labels_mov3=np.ones(len(mov_data3))
+
+data = np.concatenate([acc_data,mov_data,mov_data2,mov_data3])
+labels = np.concatenate([labels_def,labels_mov,labels_mov2,labels_mov3])
+
+print("Mixing samples")
+
+shuffle_array = np.arange(len(data))
+np.random.shuffle(shuffle_array)
+
+data_shuf = data[shuffle_array]
+label_shuf = labels[shuffle_array]
+
+for i in range(len(data_shuf)):
+    if data_shuf[:,1][i] <= -150:
+        label_shuf[i]=0
+    elif data_shuf[:,1][i] > 150:
+        label_shuf[i]=1
+    elif data_shuf[:,0][i] <=-150:
+        label_shuf[i]=2
+    elif data_shuf[:,0][i] >150:
+        label_shuf[i]=3
+    elif data_shuf[:,2][i] <=-150:
+        label_shuf[i]=4
+    elif data_shuf[:,2][i] >150:
+        label_shuf[i]=5
+    else:
+        label_shuf[i]=6
+
+from sklearn.model_selection import train_test_split
+
+print("Train")
+X_train, X_test, y_train, y_test = train_test_split(data_shuf, label_shuf, test_size=1)
+
+from sklearn.neighbors import KNeighborsClassifier
+classifier = KNeighborsClassifier(n_neighbors=5)
+print("Fit KNN")
+classifier.fit(X_train, y_train)
+
+y_pred = classifier.predict(X_test)
+
+
+################################################################################
+################################################################################
+
 def add_empty_row(array):
     return np.vstack([array,[-1,-1,-1,-1,-1,-1,-1,-1]])
 
@@ -63,7 +121,7 @@ beat = True
 
 def print_instructions():
     if piano:
-        stdscr.addstr(3, 0, "[1]: Select instrument - (Piano) | Guitar")
+        stdscr.addstr(3, 0, "[1]: Select instrument - (Piano) | Guitar ")
     else:
         stdscr.addstr(3, 0, "[1]: Select instrument - Piano | (Guitar)")
     if beat:
@@ -73,14 +131,9 @@ def print_instructions():
     stdscr.addstr(5, 0, "[3]: Clear loop")
 
 stdscr = curses.initscr()
-# curses.noecho()
-# curses.cbreak()
 
 prev=-1
-# compass=np.array([[0,1,0,1,0,1,0,1], [2,-1,3,-1,4,-1,2,-1]])
-# compass=np.array([[0,1,0,1,0,1,0,1], [-1,-1,-1,-1,-1,-1,-1,-1]])
 compass=np.array([[0,1,0,1,1,0,0,1], [-1,-1,-1,-1,-1,-1,-1,-1]])
-# compass=np.array([[0,0,1,0,1,0,0,1], [-1,-1,-1,-1,-1,-1,-1,-1]])
 cnt=0
 row=0
 
@@ -105,15 +158,16 @@ while True:
             compass[0] = [0,1,0,1,1,0,0,1]
 
     if keyboard.is_pressed('3'):
-        compass = np.array(compass[0])
+        compass = np.array([[0,1,0,1,1,0,0,1], [-1,-1,-1,-1,-1,-1,-1,-1]])
 
     stdscr.addstr(0, 0, 'Beat: '+str(cnt)+' Iteration:'+str(row))
-    # stdscr.refresh()
-
 
     try:
         x = StringIO(check_output(["tail","-n","5","/tmp/ramdisk/live.csv"]).decode("utf-8"))
         x = pd.read_csv(x,header=None).iloc[:-2,:3]
+        ################################PREDICT NEW POINT###########################
+        predicted = classifier.predict(x)
+        ############################################################################
         stds = x.std().values
 
         res = -1 if max(stds)<2500 else np.argmax(stds)
@@ -146,46 +200,37 @@ while True:
             continue
         if res == 0:
             if sign > 0:
-                stdscr.addstr(1, 0, "Action: Forward")
-                # stdscr.refresh()
+                stdscr.addstr(1, 0, "Action: Backwards")
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 2
             else:
-                stdscr.addstr(1, 0, "Action: Backwards")
-                # stdscr.refresh()
+                stdscr.addstr(1, 0, "Action: Forward")
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 3
         elif res == 1:
             if sign > 0:
                 stdscr.addstr(1, 0, "Action: Right")
-                # stdscr.refresh()
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 4
             else:
                 stdscr.addstr(1, 0, "Action: Left")
-                # stdscr.refresh()
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 5
         elif res == 2:
             if sign > 0:
                 stdscr.addstr(1, 0, "Action: Up")
-                # stdscr.refresh()
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 6
             else:
                 stdscr.addstr(1, 0, "Action: Down")
-                # stdscr.refresh()
                 compass[row+((cnt+1)//8),(cnt+1)%8] = 7
         else:
             stdscr.addstr(1, 0, "Action: None")
-            # stdscr.refresh()
         prev=res
 
     except Exception as e:
-        print( "<p>Error: %s</p>" % str(e) )
+        # print( "<p>Error: %s</p>" % str(e) )
+        pass
 
     print_instructions()
+    stdscr.refresh()
 
     compass = add_empty_row(compass)
     if cnt == 7:
         row += 1
     cnt = (cnt + 1)%8
-
-    # curses.echo()
-    # curses.nocbreak()
-    # curses.endwin()
